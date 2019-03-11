@@ -1,6 +1,8 @@
 var ip = null;
 var appName, server;
 var link = null;
+var envir = ((typeof require !== "undefined") ? "node" : (typeof chrome !== "undefined" ? (typeof chrome.app !== "undefined" ? (typeof chrome.app.runtime !== "undefined" ? "chromeapp" : "browser") : "browser") : "browser"));
+var customServer = {on: false, options: {name: "", theme: "navy"}};
 var themes = {
  navy: {
   theme: "navy",
@@ -47,7 +49,7 @@ var themes = {
 };
 // Node section
 function startServer(){
- if(typeof require !== "undefined"){
+ if(envir === "node"){
   var PeerServer = require('peer').PeerServer;
   server = PeerServer({port: 9000, path: '/signaler'});
   var http = require('http');
@@ -58,17 +60,38 @@ function startServer(){
    document.getElementById("ip").removeAttribute("hidden");
   })
   http.createServer(function (req, res) {
-   fs.readFile('./src/index.html', function(err, data) {
-    res.writeHead(200, {'Content-Type': 'text/html'});
-    res.write(data);
+   if(req.url === "/styles.css"){
+    fs.readFile('./src/styles.css', function(err, data) {
+     res.writeHead(200, {'Content-Type': 'text/css'});
+     res.write(data);
+     res.end();
+    });
+   }else if(req.url === "/script.js"){
+    fs.readFile('./src/script.js', function(err, data) {
+     res.writeHead(200, {'Content-Type': 'application/javascript'});
+     res.write(data);
+     res.end();
+    });
+   }else if(req.url === "/policy.json"){
+    res.writeHead(200, {'Content-Type': 'application/javascript'});
+    res.write(JSON.stringify(customServer.options));
     res.end();
-   });
+   }else{
+    fs.readFile('./src/index.html', function(err, data) {
+     res.writeHead(200, {'Content-Type': 'text/html'});
+     res.write(data);
+     res.end();
+    });
+   };
   }).listen(80);
+  customServer.on = true;
   server.on("connection",function (id){
    sendMessage("/addPeer " + id);
    newPeer(peer.connect(id));
   })
- }
+ }else{
+  alert("You can't create servers from this environment!");
+ };
 }
 // End node section
 var peer, id, peers;
@@ -119,6 +142,12 @@ function sendMessage(m){
 }
 function joinServer(id, link){
  peer = new Peer(id.toLowerCase(), {host: (link || ip || location.host), port: 9000, path: '/signaler'});
+ fetch("/policy.json").then(function (r){return r.json()}).then(function (j){
+  chooseTheme(j.theme);
+  document.getElementById("theme-select").value = j.theme;
+  document.getElementById("server-name-bar").innerText = j.name;
+  document.getElementById("title").innerText = (j.name.length > 0 ? j.name : "Overcast");
+ })
  peer.on("close",function (){
   msg("Server", "Oh nose, your connection was closed! Reload to try again.");
  });
@@ -155,6 +184,9 @@ function joinServer(id, link){
   };
   document.getElementById("you-id").innerHTML = peer.id;
   document.getElementById("cover").setAttribute("hidden","hidden");
+  if(customServer.on){
+   document.getElementById("settings-popup").removeAttribute("hidden");
+  };
   peer.on('connection', function(conn) {
    newPeer(conn);
   });
@@ -166,14 +198,14 @@ window.addEventListener("load",function (){
   alert("Oh nose! Your browser can't run "+ appName + "!");
   return false;
  };
- if(typeof require !== "undefined"){
+ if(envir !== "browser"){
   document.getElementById("close").removeAttribute("hidden");
   document.getElementById("server").removeAttribute("hidden");
+  if(envir === "node"){
+   document.getElementById("customServer").removeAttribute("hidden");
+  };
  }else{
   document.getElementById("enterName").removeAttribute("hidden");
-  if(typeof chrome.app.runtime !== "undefined"){
-   document.getElementById("close").removeAttribute("hidden");
-  };
  };
  document.getElementById("join").addEventListener("click",function (){
   joinServer(document.getElementById("nameInput").value);
@@ -192,11 +224,21 @@ window.addEventListener("load",function (){
   var m = document.getElementById("chat-input").value;
   document.getElementById("chat-input").value = "";
   sendMessage(m);
- })
+ });
+ document.getElementById("submit-server-settings").addEventListener("click",function (){
+  customServer.options.name = document.getElementById("server-name").value;
+  customServer.options.theme = document.getElementById("server-theme").value;
+  document.getElementById("server-name-bar").innerText = customServer.options.name;
+  document.getElementById("title").innerText = (customServer.options.name > 0 ? customServer.options.name : "Overcast");
+  document.getElementById("settings-popup").setAttribute("hidden","hidden");
+ });
  document.getElementById("close").addEventListener("click",function (){window.close()})
  document.getElementById("theme-select").addEventListener("change",function (e){
-  var newTheme = e.target.value;
-  var cssString = `
+  chooseTheme(e.target.value);
+ })
+})
+function chooseTheme(newTheme){
+ var cssString = `
 :root {
  --theme: ` + themes[newTheme].theme + `;
  --theme-light: ` + themes[newTheme].light + `;
@@ -204,7 +246,6 @@ window.addEventListener("load",function (){
  --text: ` + themes[newTheme].text + `;
  --font: ` + themes[newTheme].font + `;
 }
-  `;
-  document.getElementById("theme").innerHTML = cssString;
- })
-})
+ `;
+ document.getElementById("theme").innerHTML = cssString;
+};
